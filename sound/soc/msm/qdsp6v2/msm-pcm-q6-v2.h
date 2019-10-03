@@ -105,6 +105,7 @@ struct output_meta_data_st {
 
 struct msm_plat_data {
 	int perf_mode;
+	struct mutex lock;
 };
 
 #endif /*_MSM_PCM_H*/
