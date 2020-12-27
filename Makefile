@@ -651,6 +651,9 @@ KBUILD_CFLAGS += $(call cc-disable-warning, stringop-truncation)
 # disable address-of-packed-member in gcc 9+
 KBUILD_CFLAGS += $(call cc-disable-warning, address-of-packed-member)
 
+# We'll want to enable this eventually, but it's not going away for 5.7 at least
+KBUILD_CFLAGS += $(call cc-disable-warning, zero-length-bounds)
+
 # disable invalid "can't wrap" optimizations for signed / pointers
 KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
 
