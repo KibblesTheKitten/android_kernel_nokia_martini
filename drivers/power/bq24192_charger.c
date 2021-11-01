@@ -30,6 +30,7 @@
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/qpnp/qpnp-adc.h>
+#include <linux/fastchg.h>
 
 /* Register definitions */
 #define INPUT_SRC_CONT_REG              0X00
@@ -162,10 +163,16 @@ struct current_limit_entry {
 	int chg_limit;
 };
 
-static struct current_limit_entry adap_tbl[] = {
+static struct current_limit_entry default_adap_tbl[] = {
 	{1200, 1024},
 	{2000, 1536},
 };
+static struct current_limit_entry fastchg_adap_tbl[] = {
+	{1500, 1280},
+	{2000, 1696},
+};
+static struct current_limit_entry *adap_tbl = default_adap_tbl;
+static const int adap_tbl_size = ARRAY_SIZE(default_adap_tbl);
 
 static int bq24192_step_down_detect_disable(struct bq24192_chip *chip);
 static int bq24192_get_soc_from_batt_psy(struct bq24192_chip *chip);
@@ -1022,6 +1029,12 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 	int wlc_online = 0;
 	int wlc_chg_current_ma = 0;
 
+	if (force_fast_charge) {
+		adap_tbl = fastchg_adap_tbl;
+	} else {
+		adap_tbl = default_adap_tbl;
+	}
+
 	chip->usb_psy->get_property(chip->usb_psy,
 			  POWER_SUPPLY_PROP_ONLINE, &ret);
 	chip->usb_online = ret.intval;
@@ -1208,7 +1221,7 @@ static void bq24192_input_limit_worker(struct work_struct *work)
 	chip->icl_first = false;
 
 	if (vbus_mv > chip->icl_vbus_mv
-			&& chip->icl_idx < (ARRAY_SIZE(adap_tbl) - 1)) {
+			&& chip->icl_idx < (adap_tbl_size - 1)) {
 		chip->icl_idx++;
 		bq24192_set_input_i_limit(chip,
 				adap_tbl[chip->icl_idx].input_limit);
