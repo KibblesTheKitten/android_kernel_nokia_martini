@@ -25,34 +25,37 @@
 #include <linux/of.h>
 #include <mach/cpufreq.h>
 
+#define MSM_THERMAL_WORK_TIMEOUT 500
+
 unsigned int temp_threshold = 70;
 module_param(temp_threshold, int, 0644);
 
 struct thermal_info {
 	uint32_t max_freq;
-	uint32_t safe_diff;
+	uint32_t time_left;
 	bool throttling;
 	bool pending_change;
 };
 
-struct thermal_thresholds {
-	uint8_t diff;
-	uint32_t frequency;
+struct thermal_level {
+	uint32_t diff;
+	uint32_t freq;
+	uint32_t time;
 };
 
 static struct thermal_info info = {
 	.max_freq = UINT_MAX,
-	.safe_diff = 5,
+	.time_left = 0,
 	.throttling = false,
 	.pending_change = false
 };
 
-static struct thermal_thresholds thresholds[] = {
-	{ .diff = 15, .frequency = 729600 },
-	{ .diff = 12, .frequency = 1190400 },
-	{ .diff = 9, .frequency = 1497600 },
-	{ .diff = 5, .frequency = 1728000 },
-	{ .diff = 0, .frequency = 1958400 }
+static struct thermal_level levels[] = {
+	{ .diff = 15, .freq = 729600,  .time = 4000 },
+	{ .diff = 12, .freq = 1190400, .time = 3000 },
+	{ .diff = 9,  .freq = 1497600, .time = 3000 },
+	{ .diff = 5,  .freq = 1728000, .time = 2000 },
+	{ .diff = 0,  .freq = 1958400, .time = 2000 }
 };
 
 static struct msm_thermal_data msm_thermal_info;
@@ -77,14 +80,18 @@ static struct notifier_block msm_thermal_cpufreq_notifier = {
 	.notifier_call = msm_thermal_cpufreq_callback,
 };
 
-static void limit_cpu_freqs(uint32_t max_freq)
+static bool limit_cpu_freq(uint32_t freq, uint32_t time, uint32_t time_passed)
 {
 	unsigned int cpu;
 
-	if (info.max_freq == max_freq)
-		return;
+	if (info.time_left < time_passed) info.time_left = 0;
+	else info.time_left = info.time_left - time_passed;
 
-	info.max_freq = max_freq;
+	if (info.max_freq < freq && info.time_left > 0) return false;
+	else if (info.max_freq == freq) return false;
+
+	info.max_freq = freq;
+	info.time_left = time;
 	info.pending_change = true;
 
 	get_online_cpus();
@@ -94,6 +101,7 @@ static void limit_cpu_freqs(uint32_t max_freq)
 	put_online_cpus();
 
 	info.pending_change = false;
+	return true;
 }
 
 static void check_temp(struct work_struct *work)
@@ -106,23 +114,22 @@ static void check_temp(struct work_struct *work)
 	tsens_get_temp(&tsens_dev, &temp);
 
 	if (info.throttling) {
-		if (temp < (temp_threshold - info.safe_diff)) {
-			limit_cpu_freqs(UINT_MAX);
-			info.throttling = false;
+		if (temp < temp_threshold) {
+			info.throttling = !limit_cpu_freq(UINT_MAX, 0, MSM_THERMAL_WORK_TIMEOUT);
 			goto reschedule;
 		}
 	}
 
-	for (i = 0; i < sizeof(thresholds)/sizeof(struct thermal_thresholds); i++) {
-		if (temp > temp_threshold + thresholds[i].diff) {
-			limit_cpu_freqs(thresholds[i].frequency);
+	for (i = 0; i < sizeof(levels)/sizeof(struct thermal_level); i++) {
+		if (temp > temp_threshold + levels[i].diff) {
+			limit_cpu_freq(levels[i].freq, levels[i].time, MSM_THERMAL_WORK_TIMEOUT);
 			info.throttling = true;
 			goto reschedule;
 		}
 	}
 
 reschedule:
-	queue_delayed_work(thermal_wq, &check_temp_work, msecs_to_jiffies(1000));
+	queue_delayed_work(thermal_wq, &check_temp_work, msecs_to_jiffies(MSM_THERMAL_WORK_TIMEOUT));
 }
 
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
