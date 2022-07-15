@@ -28,31 +28,31 @@
 unsigned int temp_threshold = 70;
 module_param(temp_threshold, int, 0644);
 
-static struct thermal_info {
-	uint32_t cpuinfo_max_freq;
-	uint32_t limited_max_freq;
-	unsigned int safe_diff;
+struct thermal_info {
+	uint32_t max_freq;
+	uint32_t safe_diff;
 	bool throttling;
 	bool pending_change;
-} info = {
-	.cpuinfo_max_freq = LONG_MAX,
-	.limited_max_freq = LONG_MAX,
+};
+
+struct thermal_thresholds {
+	uint8_t diff;
+	uint32_t frequency;
+};
+
+static struct thermal_info info = {
+	.max_freq = UINT_MAX,
 	.safe_diff = 5,
 	.throttling = false,
-	.pending_change = false,
+	.pending_change = false
 };
 
-enum thermal_freqs {
-	FREQ_HELL		= 729600,
-	FREQ_VERY_HOT		= 1036800,
-	FREQ_HOT		= 1267200,
-	FREQ_WARM		= 1497600,
-};
-
-enum threshold_levels {
-	LEVEL_HELL		= 12,
-	LEVEL_VERY_HOT		= 9,
-	LEVEL_HOT		= 5,
+static struct thermal_thresholds thresholds[] = {
+	{ .diff = 15, .frequency = 729600 },
+	{ .diff = 12, .frequency = 1190400 },
+	{ .diff = 9, .frequency = 1497600 },
+	{ .diff = 5, .frequency = 1728000 },
+	{ .diff = 0, .frequency = 1958400 }
 };
 
 static struct msm_thermal_data msm_thermal_info;
@@ -65,12 +65,12 @@ static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 	struct cpufreq_policy *policy = data;
 
 	if (event != CPUFREQ_ADJUST && !info.pending_change)
-		return 0;
+		return NOTIFY_OK;
 
 	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
-		info.limited_max_freq);
+		info.max_freq);
 
-	return 0;
+	return NOTIFY_OK;
 }
 
 static struct notifier_block msm_thermal_cpufreq_notifier = {
@@ -81,17 +81,15 @@ static void limit_cpu_freqs(uint32_t max_freq)
 {
 	unsigned int cpu;
 
-	if (info.limited_max_freq == max_freq)
+	if (info.max_freq == max_freq)
 		return;
 
-	info.limited_max_freq = max_freq;
+	info.max_freq = max_freq;
 	info.pending_change = true;
 
 	get_online_cpus();
 	for_each_online_cpu(cpu) {
 		cpufreq_update_policy(cpu);
-		pr_info("%s: Setting cpu%d max frequency to %d\n",
-				KBUILD_MODNAME, cpu, info.limited_max_freq);
 	}
 	put_online_cpus();
 
@@ -101,38 +99,30 @@ static void limit_cpu_freqs(uint32_t max_freq)
 static void check_temp(struct work_struct *work)
 {
 	struct tsens_device tsens_dev;
-	uint32_t freq = 0;
 	long temp = 0;
+	int i = 0;
 
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
 
 	if (info.throttling) {
 		if (temp < (temp_threshold - info.safe_diff)) {
-			limit_cpu_freqs(info.cpuinfo_max_freq);
+			limit_cpu_freqs(UINT_MAX);
 			info.throttling = false;
 			goto reschedule;
 		}
 	}
 
-	if (temp >= temp_threshold + LEVEL_HELL)
-		freq = FREQ_HELL;
-	else if (temp >= temp_threshold + LEVEL_VERY_HOT)
-		freq = FREQ_VERY_HOT;
-	else if (temp >= temp_threshold + LEVEL_HOT)
-		freq = FREQ_HOT;
-	else if (temp > temp_threshold)
-		freq = FREQ_WARM;
-
-	if (freq) {
-		limit_cpu_freqs(freq);
-
-		if (!info.throttling)
+	for (i = 0; i < sizeof(thresholds)/sizeof(struct thermal_thresholds); i++) {
+		if (temp > temp_threshold + thresholds[i].diff) {
+			limit_cpu_freqs(thresholds[i].frequency);
 			info.throttling = true;
+			goto reschedule;
+		}
 	}
 
 reschedule:
-	queue_delayed_work(thermal_wq, &check_temp_work, msecs_to_jiffies(250));
+	queue_delayed_work(thermal_wq, &check_temp_work, msecs_to_jiffies(1000));
 }
 
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
@@ -144,8 +134,10 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 	memset(&data, 0, sizeof(struct msm_thermal_data));
 
 	ret = of_property_read_u32(node, "qcom,sensor-id", &data.sensor_id);
-	if (ret)
-		return ret;
+	if (ret) {
+		pr_err("thermals: if this fails here, we're in troble\n");
+		goto err;
+	}
 
 	WARN_ON(data.sensor_id >= TSENS_MAX_SENSORS);
 
@@ -153,8 +145,10 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 
 	ret = cpufreq_register_notifier(&msm_thermal_cpufreq_notifier,
 		CPUFREQ_POLICY_NOTIFIER);
-	if (ret)
+	if (ret) {
 		pr_err("thermals: well, if this fails here, we're fucked\n");
+		goto err;
+	}
 
 	thermal_wq = alloc_workqueue("thermal_wq", WQ_HIGHPRI, 0);
 	if (!thermal_wq) {
