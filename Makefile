@@ -110,10 +110,6 @@ endif
 PHONY := _all
 _all:
 
-# A simple target for testing variables
-PHONY += print-%
-print-%: ; @echo $* = $($*)
-
 # Cancel implicit rules on top Makefile
 $(CURDIR)/Makefile Makefile: ;
 
@@ -249,9 +245,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -std=gnu89 $(COMMONFLAGS) \
-		-fomit-frame-pointer
-HOSTCXXFLAGS = $(COMMONFLAGS)
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89
+HOSTCXXFLAGS = -O2
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -352,10 +347,6 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-KERNELFLAGS     = $(COMMONFLAGS) -mtune=cortex-a15 -mcpu=cortex-a15 \
-		  -marm -mfpu=neon-vfpv4 -mvectorize-with-neon-quad \
-		  -munaligned-access -D__ARM_FEATURE_LPAE=1
-MODFLAGS        = -DMODULE $(KERNELFLAGS)
 CFLAGS_MODULE   =
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  =
@@ -574,23 +565,11 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
 KBUILD_CFLAGS	+= $(call cc-disable-warning,maybe-uninitialized,)
 
-# Define common optimization flags
-COMMONFLAGS	+= -pipe -DNDEBUG -fdiagnostics-color
-
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
-COMMONFLAGS	+= -Os -finline-functions -funswitch-loops -fpredictive-commoning \
-		-fgcse-after-reload -ftree-loop-vectorize -ftree-loop-distribute-patterns \
-		-ftree-slp-vectorize -fvect-cost-model -ftree-partial-pre -fipa-cp-clone
+KBUILD_CFLAGS	+= -Os
 else
-COMMONFLAGS	+= -O3 -falign-functions=1 -falign-jumps=1 -falign-loops=1 -falign-labels=1
+KBUILD_CFLAGS	+= -O2
 endif
-
-COMMONFLAGS	+= -ffast-math -fsingle-precision-constant -ftree-vectorize \
-		-fgcse-lm -fgcse-sm -fgcse-las -fsched-spec-load -floop-nest-optimize \
-		-fgraphite -fgraphite-identity -ftree-loop-linear -floop-interchange \
-		-floop-strip-mine -floop-block -floop-flatten
-
-KBUILD_CFLAGS	+= $(KERNELFLAGS)
 
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
