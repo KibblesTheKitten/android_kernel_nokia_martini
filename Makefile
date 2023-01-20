@@ -570,6 +570,10 @@ KBUILD_CFLAGS	+= --param inline-min-speedup=15 \
 		   --param max-inline-insns-auto=30 \
 		   --param early-inlining-insns=14
 
+KBUILD_CFLAGS	+= -mcpu=cortex-a15 \
+		   -mfpu=neon-vfpv4 \
+		   -fsingle-precision-constant
+
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
 else
@@ -618,6 +622,8 @@ KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
 KBUILD_AFLAGS	+= -gdwarf-2
+else
+KBUILD_CFLAGS	+= -g0
 endif
 
 ifdef CONFIG_DEBUG_INFO_REDUCED
