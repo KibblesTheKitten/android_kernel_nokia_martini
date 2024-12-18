@@ -36,4 +36,5 @@ struct msm_thermal_data {
 	int32_t psm_temp_hyst_degC;
 };
 
+
 #endif /*__MSM_THERMAL_H*/
