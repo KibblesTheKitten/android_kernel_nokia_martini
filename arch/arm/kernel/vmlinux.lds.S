@@ -62,14 +62,15 @@ SECTIONS
 	 * unwind sections get included.
 	 */
 	/DISCARD/ : {
-		*(.ARM.exidx.exit.text)
-		*(.ARM.extab.exit.text)
-		ARM_CPU_DISCARD(*(.ARM.exidx.cpuexit.text))
-		ARM_CPU_DISCARD(*(.ARM.extab.cpuexit.text))
 		ARM_EXIT_DISCARD(EXIT_TEXT)
 		ARM_EXIT_DISCARD(EXIT_DATA)
 		EXIT_CALL
 #ifndef CONFIG_HOTPLUG
+        *(EXIT_TEXT)
+        *(EXIT_DATA)
+#else
+        *(.ARM.exidx.exit.text)
+        *(.ARM.extab.exit.text)
 		*(.ARM.exidx.devexit.text)
 		*(.ARM.extab.devexit.text)
 #endif
@@ -132,6 +133,7 @@ SECTIONS
 	.ARM.unwind_idx : {
 		__start_unwind_idx = .;
 		*(.ARM.exidx*)
+        *(.ARM.exidx.*)
 		__stop_unwind_idx = .;
 	}
 	.ARM.unwind_tab : {
